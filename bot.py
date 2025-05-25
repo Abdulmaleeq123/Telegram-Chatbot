@@ -1,6 +1,8 @@
 import re
 import random
 import sqlite3
+from telegram.ext import CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from datetime import datetime
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler # type: ignore
@@ -45,6 +47,13 @@ PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, ACCOUNT_NUMBER, GENDER, DOB = range
 # Email validation pattern
 EMAIL_PATTERN = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
 
+keyboard = [
+    [InlineKeyboardButton("Register", callback_data="register")],
+    [InlineKeyboardButton("Login", callback_data="login")],
+    [InlineKeyboardButton("Help", callback_data="help")],
+] 
+reply_markup = InlineKeyboardMarkup(keyboard)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_message = (
         "👋 Welcome to *Kadick Integrated Limited*!\n\n"
@@ -55,12 +64,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• Get information about your wallet balance\n"
         "• Vend airtime or data\n"
         "• Access support\n\n"
-        "Type:\n /register to begin registration\n /login to view your account\n /help for other commands.\n\n"
+        "To get started, please choose an option below:\n\n"
     )
-    await update.message.reply_text(welcome_message, parse_mode='Markdown')
-
+    await update.message.reply_text(welcome_message, parse_mode='Markdown', reply_markup=reply_markup)
+    
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text(
         'Available commands:\n'
         '/register - Register your details\n'
         '/login - Login to your account\n'
@@ -70,11 +80,18 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(
         "📱 Please enter your registered phone number:",
         parse_mode="Markdown"
     )
-    return PHONE_LOGIN
+    else:
+        await update.message.reply_text(
+            "📱 Please enter your registered phone number:",
+        parse_mode="Markdown"
+        )
+        return PHONE_LOGIN
 
 async def receive_login_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     raw_phone = update.message.text.strip()
@@ -126,27 +143,74 @@ async def receive_login_password(update: Update, context: ContextTypes.DEFAULT_T
 
     if attempted_password == stored_password:
         context.user_data['logged_in'] = True
+
+        keyboard = [
+            [InlineKeyboardButton("Services", callback_data="services")],
+            [InlineKeyboardButton("My Profile", callback_data="my_profile")],
+            [InlineKeyboardButton("Logout", callback_data="logout")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
             "✅ Login successful!\n\n"
-            f"Welcome back, {last_name} {first_name}"
+            f"Welcome back, {last_name} {first_name}\n"
+            "Your balance:  ₦0.00\n\n"
+            "Please select an option:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
+        return ConversationHandler.END
     else:
         await update.message.reply_text(
             "❌ Incorrect password. Please try /login again."
         )
         return ConversationHandler.END
 
+async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    keyboard = [
+        [InlineKeyboardButton("Buy Airtime", callback_data="buy_airtime")],
+        [InlineKeyboardButton("Buy Data", callback_data="buy_data")],
+        [InlineKeyboardButton("Other Services", callback_data="other_services")],
+        [InlineKeyboardButton("Back", callback_data="back_to_menu")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.message.reply_text(
+        "🔧 Please choose an option:", 
+        reply_markup=reply_markup
+    )
+
+async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    keyboard = [
+        [InlineKeyboardButton("continue", callback_data="continue_registration")],
+        [InlineKeyboardButton("Back", callback_data="services")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.message.reply_text(
+        "You need to continue your registration to have access to other services\n"
+        "Click on continue to continue your registration.",
+        reply_markup=reply_markup
+        )
+
+
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
-    conn = sqlite3.connect('users.db')
-    await update.message.reply_text(
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text( 
         "📝 Let's start your registration!\n"
         "Please enter your *First Name*",
         parse_mode="Markdown"
     )
+        return FIRST_NAME
+    else:
+        await update.message.reply_text(
+        "📝 Let's start your registration!\n"
+            "Please enter your *First Name*:",
+            parse_mode="Markdown"
+        )
     return FIRST_NAME
 
-async def receive_first_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def receive_first_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['first_name'] = update.message.text
     await update.message.reply_text(
         "⌨️ Please enter your *Last Name*:",
@@ -154,7 +218,7 @@ async def receive_first_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
     return LAST_NAME
 
-async def receive_last_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def receive_last_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['last_name'] = update.message.text
     await update.message.reply_text(
         "📱 Enter your *Phone Number*:",
@@ -162,7 +226,7 @@ async def receive_last_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
     return PHONE
 
-async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not update.message.text.isdigit():
         await update.message.reply_text(
             "⚠️ Please enter a valid phone number (digits only):")
@@ -180,61 +244,56 @@ async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
     return ADDRESS
 
-async def receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def receive_address(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data['address'] = update.message.text
-    state_list = "🌍 Select your State by number:\n"
     states = list(NIGERIAN_STATES.keys())
-    for idx, state in enumerate(states, 1):
-        state_list += f"{idx}. {state}\n"
+    keyboard =[ 
+        [InlineKeyboardButton(state, callback_data=state)] for state in states
+        ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        state_list,
+        "🌍 Select your *State*:",
+        reply_markup=reply_markup,
         parse_mode='Markdown'
     )
     return STATE
 
 async def receive_state(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        state_num = int(update.message.text.strip())
-        states = list(NIGERIAN_STATES.keys())
-        if 1 <= state_num <= len(states):
-            selected_state = states[state_num - 1]
-            context.user_data['state'] = selected_state
-            lga_list = "🏙️ Select your LGA by number:\n"
-            lgas = NIGERIAN_STATES[selected_state]
+   query = update.callback_query
+   await query.answer()
+   selected_state = query.data
+   context.user_data['state'] = selected_state
 
-            for idx, lga in enumerate(lgas, 1):
-                lga_list += f"{idx}. {lga}\n"
-            await update.message.reply_text(lga_list, parse_mode='Markdown')
-            return LGA
-        else:
-            await update.message.reply_text("⚠️ Invalid selection. Please choose a valid number from the list.")
-            return STATE
-    except ValueError:
-        await update.message.reply_text("⚠️ Please enter a valid number.")
-        return STATE
+   lgas = NIGERIAN_STATES[selected_state]
+   keyboard =[ [InlineKeyboardButton(lga, callback_data=lga)] for lga in lgas]
+   reply_markup = InlineKeyboardMarkup(keyboard)
 
+   await query.edit_message_text(
+       text="🏙️ Now Select your LGA",
+       reply_markup=reply_markup,
+       parse_mode='Markdown'
+       )
+   return LGA
+   
 async def receive_lga(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    try:
-        lga_num = int(update.message.text.strip())
-        selected_state = context.user_data['state']
-        lgas = NIGERIAN_STATES[selected_state]
-        if 1 <= lga_num <= len(lgas):
-            context.user_data['lga'] = lgas[lga_num - 1]
+    query = update.callback_query
+    await query.answer()
+    selected_lga = query.data
+    context.user_data['lga'] = selected_lga
 
-            await update.message.reply_text(
-                "📎 Please enter your *Referral Code* (optional)\n"
-                "If you don't have one, type /skip to proceed:",
-                parse_mode='Markdown'
-                )
-            return REFERRAL_CODE
-        else:
-            await update.message.reply_text("⚠️ Invalid LGA selection. " \
-            "Please choose a valid number from the list.")
-            return LGA
-    except ValueError:
-            await update.message.reply_text("⚠️ Please enter a valid number.")
-            return LGA
+    
+    keyboard = [[InlineKeyboardButton("Skip Referral", callback_data="Skip Referral")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
 
+    await query.edit_message_text(
+    text=f"✅ Selected state: [{context.user_data['state']}]\n"
+        f"✅ Selected LGA: {selected_lga}\n\n"
+        f"📎 Please enter your *Referral Code* or press 'Skip Referral' ",
+         reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+    return REFERRAL_CODE
+        
 def generate_otp():
     return str(random.randint(100000, 999999))
 
@@ -246,21 +305,24 @@ async def receive_referral_code(update: Update, context:ContextTypes.DEFAULT_TYP
     context.user_data['otp'] = otp
     
     await update.message.reply_text(
-        f"🔐 OTP sent to *{user_phone}* via SMS. Please enter it here: `{otp}` (Demo)"),
-    parse_mode='Markdown'
+        f"🔐 OTP sent to *{user_phone}* via SMS. Please enter it here: `{otp}` (Demo)",
+    parse_mode='Markdown',
+    reply_markup=ReplyKeyboardRemove()
+    )
     return OTP_VERIFICATION
 
 
-async def skip_referral_code(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
+async def skip_referral_code(update: Update, context:ContextTypes.DEFAULT_TYPE) -> int:
+    await update.callback_query.answer()
+
     context.user_data['referral_code'] = None
 
     user_phone = context.user_data['phone']
-
     otp = generate_otp()
     context.user_data['otp'] = otp
 
 
-    await update.message.reply_text(
+    await update.callback_query.message.reply_text(
         f"🔐 OTP sent to *{user_phone}* via SMS. Please enter it here: `{otp}` (Demo)",
         parse_mode='Markdown'
     )
@@ -272,7 +334,7 @@ async def verify_otp(update: Update, context:ContextTypes.DEFAULT_TYPE) -> int:
 
     if user_input == stored_otp:
         await update.message.reply_text(
-            "✅ OTP verified!\n" \
+            "✅ OTP verified!\n"\
             "Create your password.\n " \
             "Must be at least 8 characters and " \
             "contain at least one special character and one number."
@@ -297,7 +359,7 @@ async def receive_password(update: Update, context:ContextTypes.DEFAULT_TYPE) ->
 
 async def confirm_password(update: Update, context:ContextTypes.DEFAULT_TYPE) -> int:
         confirmed_password = update.message.text.strip()
-        original_password = context.user_data('password', '')
+        original_password = context.user_data.get('password', '')
 
         if confirmed_password != original_password:
             await update.message.reply_text("❌ Passwords do not match. \
@@ -306,11 +368,21 @@ async def confirm_password(update: Update, context:ContextTypes.DEFAULT_TYPE) ->
 
         # Save to database
         user_id = update.effective_user.id
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
         registration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
-            conn = sqlite3.connect('users.db')
-            c = conn.cursor()
-            c.execute('''INSERT OR REPLACE INTO users 
+            c.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
+            if c.fetchone():
+                await update.message.reply_text(
+                    "⚠️ User already exists. Please login with /login.",
+                    parse_mode='Markdown'
+                )
+                conn.close()
+                context.user_data.clear()
+                return ConversationHandler.END
+            
+            c.execute('''INSERT INTO users
                 (user_id, first_name, last_name, phone, address, 
                 state, lga, password, referral_code, email,
                 registration_date, bvn, bank_name, account_number, gender, dob)
@@ -375,13 +447,21 @@ async def continue_(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     return CONTINUE
 
 async def registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text(
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text(
         "Please enter your *Email Address*",
         parse_mode='Markdown'
     )
-    return EMAIL
+        return EMAIL
+    else:
+        await update.message.reply_text(
+            "Please enter your *Email Address*",
+            parse_mode='Markdown'
+            )
+        return EMAIL
 
-async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     email = update.message.text.strip()
     if not re.match(EMAIL_PATTERN, email):
         await update.message.reply_text(
@@ -420,6 +500,7 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "🔒 Please enter your BVN (11 digits):"
     )
     return BVN
+
 async def receive_bvn(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     bvn = update.message.text.strip()
     if not bvn.isdigit() or len(bvn) != 11:
@@ -450,24 +531,33 @@ async def receive_account_number(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ACCOUNT_NUMBER
     context.user_data['account_number'] = acc_num
+
+    keyboard = [
+        [InlineKeyboardButton("Male", callback_data="male")],
+        [InlineKeyboardButton("Female", callback_data="female")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "👤 Select Gender:\n1. Male\n2. Female")
+        "👤 Select your Gender:",
+        reply_markup=reply_markup)
     return GENDER
 
 async def receive_gender(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    gender_choice = update.message.text.strip()
-    gender_mapping = {'1': 'Male', '2': 'Female'}
+    query = update.callback_query
+    await query.answer()
+    
+    gender = query.data
+    context.user_data['gender'] = gender.capitalize()
+    
+    await query.edit_message_text(
+        text=f"✅ Gender selected: {context.user_data['gender']}"
+    )
 
-    if gender_choice not in gender_mapping:
-        await update.message.reply_text(
-            "⚠️ Invalid choice. Select 1-2:"
-        )
-        return GENDER
-    context.user_data['gender'] = gender_mapping[gender_choice]
-    await update.message.reply_text(
+    await query.message.reply_text(
         "🎂 Enter Date of Birth (DD-MM-YYYY):"
     )
     return DOB
+
 async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         dob = datetime.strptime(update.message.text.strip(), "%d-%m-%Y")
@@ -514,21 +604,25 @@ def main() -> None:
 
     # First phase conversation handler
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("register", register)],
+        entry_points= [
+        CommandHandler("register", register),
+        CallbackQueryHandler(register, pattern="^register$")
+        ],
         states={
             FIRST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_first_name)],
             LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_last_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_phone)],
             ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_address)],
-            STATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_state)],
-            LGA: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_lga)],
+            STATE: [CallbackQueryHandler (receive_state)],
+            LGA: [CallbackQueryHandler (receive_lga)],
             PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_password)],
             CONFIRM_PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_password)],
             REFERRAL_CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_referral_code),
-                            CommandHandler("skip", skip_referral_code)],
+                            CallbackQueryHandler(skip_referral_code, pattern="^Skip Referral$")], 
             OTP_VERIFICATION: [MessageHandler(filters.TEXT &  ~filters.COMMAND, verify_otp)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel)],
+        per_message=False
     )
 
     # Login conversation handler
@@ -543,19 +637,30 @@ def main() -> None:
 
     # Registration phase conversation handler
     registration_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("registration", registration)],
-        states={
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_email)],
-            BVN: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bvn)],
-            BANK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bank_name)],
-            ACCOUNT_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_account_number)],
-            GENDER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_gender)],
-            DOB: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_dob)]
+        entry_points=[
+            CommandHandler("registration", registration),
+            CallbackQueryHandler(registration, pattern="^continue_registration$")
+    ],
+    states={
+        EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_email)],
+        BVN: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bvn)],
+        BANK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_bank_name)],
+        ACCOUNT_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_account_number)],
+        GENDER: [CallbackQueryHandler(receive_gender, pattern="(?i)^male|female$")],
+        DOB: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_dob)]
         },
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
     # Register handlers
+    # application.add_handler(CallbackQueryHandler(register, pattern="^register$"))
+    application.add_handler(CallbackQueryHandler(login, pattern="^login$"))
+    application.add_handler(CallbackQueryHandler(help, pattern="^help$"))
+    application.add_handler(CallbackQueryHandler(services, pattern="^services$"))
+    application.add_handler(CallbackQueryHandler(other_services, pattern="^other_services$"))
+    # application.add_handler(CallbackQueryHandler(registration, pattern="^continue_registration$"))
+
+    # register other han
     application.add_handler(conv_handler)
     application.add_handler(login_conv_handler)
     application.add_handler(registration_conv_handler)
