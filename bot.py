@@ -42,7 +42,8 @@ TOKEN = "7077237001:AAGr3WoBn4D3pN9dvohsYII5v-ym5h__ja8"  # Replace with your bo
 # Define Conversation states
 FIRST_NAME, LAST_NAME, PHONE, ADDRESS, STATE, LGA, REFERRAL_CODE, OTP_VERIFICATION, PASSWORD,\
 CONFIRM_PASSWORD, CONTINUE, EMAIL,\
-PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, ACCOUNT_NUMBER, GENDER, DOB = range(19)
+PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, ACCOUNT_NUMBER, GENDER, DOB, BUY_AIRTIME_PHONE, BUY_AIRTIME_NETWORK,\
+BUY_AIRTIME_AMOUNT, BUY_DATA_PHONE, BUY_DATA_PLAN, BUY_DATA,AMOUNT = range(26)
 
 # Email validation pattern
 EMAIL_PATTERN = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
@@ -150,6 +151,7 @@ async def receive_login_password(update: Update, context: ContextTypes.DEFAULT_T
             [InlineKeyboardButton("Logout", callback_data="logout")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
+
         await update.message.reply_text(
             "✅ Login successful!\n\n"
             f"Welcome back, {last_name} {first_name}\n"
@@ -171,7 +173,7 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("Buy Airtime", callback_data="buy_airtime")],
         [InlineKeyboardButton("Buy Data", callback_data="buy_data")],
         [InlineKeyboardButton("Other Services", callback_data="other_services")],
-        [InlineKeyboardButton("Back", callback_data="back_to_menu")]
+        [InlineKeyboardButton("Back", callback_data="back_to_login")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
@@ -182,16 +184,51 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
     keyboard = [
-        [InlineKeyboardButton("continue", callback_data="continue_registration")],
+        [InlineKeyboardButton("Continue", callback_data="continue_registration")],
         [InlineKeyboardButton("Back", callback_data="services")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
         "You need to continue your registration to have access to other services\n"
-        "Click on continue to continue your registration.",
+        "Click on continue to proceed.",
         reply_markup=reply_markup
         )
 
+async def back_to_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('SELECT first_name, last_name FROM users WHERE user_id = ?', (user_id,))
+    user_data = c.fetchone()
+    conn.close()
+
+    if not user_data:
+        await query.message.reply_text(
+            "❌ User not found. Please login again."
+        )
+        return
+    
+    first_name = user_data[0]
+    last_name = user_data[1]
+
+    keyboard = [
+            [InlineKeyboardButton("Services", callback_data="services")],
+            [InlineKeyboardButton("My Profile", callback_data="my_profile")],
+            [InlineKeyboardButton("Logout", callback_data="logout")],
+        ]
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.message.reply_text(
+            f"Welcome back, {last_name} {first_name}\n"
+            "Your balance:  ₦0.00\n\n"
+            "Please select an option:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.callback_query:
@@ -599,6 +636,152 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data.clear()
     return ConversationHandler.END
 
+async def start_buy_airtime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text(
+        "📱 Enter the phone number to recharge"
+    )
+    return BUY_AIRTIME_PHONE
+
+async def receive_airtime_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    phone = update.message.text.strip()
+    if not phone.isdigit() or len(phone) != 11:
+        await update.message.reply_text(
+            "❌Invalid phone number. Please enter an 11-digit phone number."
+        )
+        return BUY_AIRTIME_PHONE
+    
+    context.user_data['airtime_phone'] = phone
+    keyboard = [
+        [InlineKeyboardButton("MTN", callback_data="MTN")],
+        [InlineKeyboardButton("Airtel", callback_data="Airtel")],
+        [InlineKeyboardButton("Glo", callback_data="Glo")],
+        [InlineKeyboardButton("9mobile", callback_data="9mobile")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "📶 Select your *network provider*:",
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+    return BUY_AIRTIME_NETWORK
+
+async def airtime_network(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    selected_network = query.data
+    context.user_data['airtime_network'] = selected_network
+
+
+    await query.edit_message_text(
+        text=f"Selected network: {selected_network}"
+    )
+    await query.message.reply_text(
+        "💰 Enter the *amount to recharge*:",
+        parse_mode='Markdown'
+    )
+    return BUY_AIRTIME_AMOUNT
+
+async def receive_airtime_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    amount = update.message.text.strip()
+    if not amount.isdigit() or int(amount) <= 0:
+        await update.message.reply_text(
+            "Invalid amount.:"
+        
+        )
+        return BUY_AIRTIME_AMOUNT
+    context.user_data["airtime_amount"] = amount
+
+    phone = context.user_data.get('airtime_phone')
+    selected_network = context.user_data.get('airtime_network')
+    amount = context.user_data.get('airtime_amount')
+
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="services")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"✅ Airtime purchase successful!\n\n"
+        f"📱 Phone: {phone}\n"
+        f"📶 Network: {selected_network}\n"
+        f"💵 Amount: ₦{amount}\n\n"
+        "Thank you for using KadickMoni!\n",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+    context.user_data.pop('airtime_phone', None)
+    context.user_data.pop('airtime_network', None)
+    context.user_data.pop('airtime_amount', None)
+    return ConversationHandler.END
+
+async def start_buy_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.callback_query.answer()
+    await update.callback_query.message.reply_text(
+        "📱Enter the phone number for *data purchase*:",
+        parse_mode='Markdown'
+    )
+    return BUY_DATA_PHONE
+
+async def receive_data_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    phone = update.message.text.strip()
+    if not phone.isdigit() or len(phone) != 11:
+        await update.message.reply_text(
+            "❌Invalid phone number. Please enter an 11-digit phone number"
+        )
+        return BUY_DATA_PHONE
+    
+    context.user_data['data_phone'] = phone
+    keyboard = [
+        [InlineKeyboardButton("MTN", callback_data="MTN")],
+        [InlineKeyboardButton("Airtel", callback_data="Airtel")],
+        [InlineKeyboardButton("Glo", callback_data="Glo")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "📶 Select your network provider",
+        reply_markup=reply_markup
+    )
+    return BUY_DATA_PLAN
+
+async def buy_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    selected_network = query.data
+    context.user_data['data_network'] = selected_network
+    await query.edit_message_text(
+        text=f"Selected network: {selected_network}"
+
+    )
+    await query.message.reply_text(
+        "Select a data plan:\n"
+        "1. 1GB - #1000\n"
+        "2. 2GB - #2000\n"
+        "3. 5GB - #5000\n"
+        "4. 10GB - #10000\n"
+        "5. 500MB - #500\n"
+        )
+    return BUY_DATA_PLAN
+
+async def receive_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    plan = update.message.text.strip()
+    if plan not in ["1", "2", "3", "4", "5"]:
+        await update.message.reply_text(
+            "❌ Invalid plan selected. Please choose a valid data plan:\n"
+        )
+        return BUY_DATA_PLAN
+
+
+async def receive_data_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    amount = update.message.text.strip()
+    context.user_data['data_amount'] = amount
+
+    phone = context.user_data.get('data_phone')
+    selected_network = context.user_data.get('data_network')
+    amount = context.user_data.get('data_amount')
+    
+
+
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
 
@@ -652,18 +835,31 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)]
     )
 
+    buy_airtime_conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(start_buy_airtime, pattern="^buy_airtime$")],
+            states={
+                BUY_AIRTIME_PHONE:[MessageHandler(filters.TEXT & ~filters.COMMAND, receive_airtime_phone)],
+                BUY_AIRTIME_NETWORK: [CallbackQueryHandler(airtime_network)],
+                BUY_AIRTIME_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_airtime_amount)]
+
+            },
+            fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     # Register handlers
     # application.add_handler(CallbackQueryHandler(register, pattern="^register$"))
     application.add_handler(CallbackQueryHandler(login, pattern="^login$"))
     application.add_handler(CallbackQueryHandler(help, pattern="^help$"))
     application.add_handler(CallbackQueryHandler(services, pattern="^services$"))
     application.add_handler(CallbackQueryHandler(other_services, pattern="^other_services$"))
-    # application.add_handler(CallbackQueryHandler(registration, pattern="^continue_registration$"))
+    application.add_handler(CallbackQueryHandler(back_to_login, pattern="^back_to_login$"))
 
     # register other han
     application.add_handler(conv_handler)
     application.add_handler(login_conv_handler)
     application.add_handler(registration_conv_handler)
+    application.add_handler(buy_airtime_conv_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("continue", continue_))
