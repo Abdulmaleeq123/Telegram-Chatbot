@@ -29,7 +29,9 @@ def init_db():
         bank_name TEXT,        
         account_number TEXT,   
         gender TEXT,           
-        dob TEXT               
+        dob TEXT,
+        transaction_pin TEXT
+                             
     )
     ''')
     conn.commit()
@@ -41,9 +43,9 @@ TOKEN = "7077237001:AAGr3WoBn4D3pN9dvohsYII5v-ym5h__ja8"  # Replace with your bo
 
 # Define Conversation states
 FIRST_NAME, LAST_NAME, PHONE, ADDRESS, STATE, LGA, REFERRAL_CODE, OTP_VERIFICATION, PASSWORD,\
-CONFIRM_PASSWORD, CONTINUE, EMAIL,\
-PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, ACCOUNT_NUMBER, GENDER, DOB, BUY_AIRTIME_PHONE, BUY_AIRTIME_NETWORK,\
-BUY_AIRTIME_AMOUNT, BUY_DATA_PHONE, BUY_DATA_PLAN, BUY_DATA,AMOUNT = range(26)
+CONFIRM_PASSWORD, CONTINUE, EMAIL, PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, ACCOUNT_NUMBER,\
+GENDER, DOB, BUY_AIRTIME_PHONE, BUY_AIRTIME_NETWORK, BUY_AIRTIME_AMOUNT, BUY_DATA_PHONE,\
+BUY_DATA_PLAN, SETUP_PIN, CONFIRM_PIN, ENTER_PIN, ENTER_DATA_PIN = range(28)
 
 # Email validation pattern
 EMAIL_PATTERN = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
@@ -87,6 +89,7 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "📱 Please enter your registered phone number:",
         parse_mode="Markdown"
     )
+        return PHONE_LOGIN
     else:
         await update.message.reply_text(
             "📱 Please enter your registered phone number:",
@@ -133,19 +136,42 @@ async def receive_login_password(update: Update, context: ContextTypes.DEFAULT_T
     stored_password = context.user_data['stored_password']
     attempted_password = update.message.text.strip()
 
-    first_name = context.user_data.get('first_name', '')
-    last_name = context.user_data.get('last_name', '')
+    context.user_data.clear()
 
-    # Clear temporary login data
-    context.user_data.pop('login_user_id', None)
-    context.user_data.pop('stored_password', None)
-    context.user_data.pop('first_name', None)
-    context.user_data.pop('last_name', None)
+    # first_name = context.user_data.get('first_name', '')
+    # last_name = context.user_data.get('last_name', '')
+
+    # # Clear temporary login data
+    # context.user_data.pop('login_user_id', None)
+    # context.user_data.pop('stored_password', None)
+    # context.user_data.pop('first_name', None)
+    # context.user_data.pop('last_name', None)
 
     if attempted_password == stored_password:
-        context.user_data['logged_in'] = True
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+        c.execute('''SELECT bvn, bank_name, account_number 
+                   FROM users WHERE user_id = ?''', (user_id,))
+        user_data = c.fetchone()
+        is_full_registration = all(user_data) if user_data else False
+        conn.close()
 
-        keyboard = [
+        # Get user name
+        conn = sqlite3.connect('users.db')
+        c = conn.cursor()
+        c.execute('SELECT first_name, last_name FROM users WHERE user_id = ?', (user_id,))
+        first_name, last_name = c.fetchone()
+        conn.close()
+
+        if is_full_registration:
+            keyboard = [
+                [InlineKeyboardButton("Services", callback_data="full_services")],
+                [InlineKeyboardButton("My Profile", callback_data="my_profile")],
+                [InlineKeyboardButton("Logout", callback_data="logout")],
+            ]
+        # context.user_data['logged_in'] = True
+        else:
+            keyboard = [
             [InlineKeyboardButton("Services", callback_data="services")],
             [InlineKeyboardButton("My Profile", callback_data="my_profile")],
             [InlineKeyboardButton("Logout", callback_data="logout")],
@@ -167,6 +193,20 @@ async def receive_login_password(update: Update, context: ContextTypes.DEFAULT_T
         )
         return ConversationHandler.END
 
+async def full_services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    keyboard = [
+        [InlineKeyboardButton("Buy Airtime", callback_data="buy_airtime")],
+        [InlineKeyboardButton("Buy Data", callback_data="buy_data")],
+        [InlineKeyboardButton("Pay Bills", callback_data="pay_bills")],
+        [InlineKeyboardButton("Back", callback_data="back_to_login")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.message.reply_text(
+        "🔧 Please choose an option:", 
+        reply_markup=reply_markup
+    )
+
 async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
     keyboard = [
@@ -183,7 +223,36 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
-    keyboard = [
+    user_id = update.effective_user.id
+
+    if context.user_data.get('logged_in'):
+        await update.callback_query.message.reply_text(
+            "✅ You are already logged in.\n"
+        )
+        return
+            
+
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''SELECT bvn, bank_name, account_number FROM users 
+               WHERE user_id = ? AND bvn IS NOT NULL 
+               AND bank_name IS NOT NULL 
+               AND account_number IS NOT NULL''', (user_id,))
+    existing_details = c.fetchone()
+    conn.close()
+
+    if existing_details:
+        keyboard = [
+            [InlineKeyboardButton("Login", callback_data="login")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.message.reply_text(
+            "✅ You've already completed the second phase of registration:\n\n"
+                "Please login to access services.",
+                reply_markup=reply_markup
+        )
+    else:
+        keyboard = [
         [InlineKeyboardButton("Continue", callback_data="continue_registration")],
         [InlineKeyboardButton("Back", callback_data="services")]
     ]
@@ -484,12 +553,37 @@ async def continue_(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     return CONTINUE
 
 async def registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user_id = update.effective_user.id
+
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''SELECT bvn, bank_name, account_number FROM users 
+               WHERE user_id = ? AND bvn IS NOT NULL 
+               AND bank_name IS NOT NULL 
+               AND account_number IS NOT NULL''', (user_id,))
+    existing_details = c.fetchone()
+    conn.close()
+
+    if existing_details:
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.message.reply_text(
+                "✅ You've already completed the second phase of registration:\n\n"
+                "Please login to access services."
+                )
+            return ConversationHandler.END
+        else:
+            await update.message.reply_text(
+                "✅ You've already completed your registration!\n"
+                "Please login to access services."
+            )
+            return ConversationHandler.END
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.message.reply_text(
-        "Please enter your *Email Address*",
-        parse_mode='Markdown'
-    )
+                "Please enter your *Email Address*",
+                parse_mode='Markdown'
+            )
         return EMAIL
     else:
         await update.message.reply_text(
@@ -624,9 +718,16 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         conn.commit()
         conn.close()
 
+        keyboard = [
+            [InlineKeyboardButton("Continue", callback_data="continue")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
         await update.message.reply_text(
-            "✅ Additional details saved!\n"
+            "✅ Additional details saved!\n",
+            reply_markup=reply_markup,
         )
+
     except Exception as e:
         print(f"Database Error:  {str(e)}")
         await update.message.reply_text(
@@ -636,6 +737,77 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     context.user_data.clear()
     return ConversationHandler.END
 
+async def start_pin_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text(
+        "Create a 4-digit transaction pin.\n"
+    )
+    return SETUP_PIN
+
+async def setup_pin(update: Update, context:ContextTypes.DEFAULT_TYPE) -> int:
+    pin = update.message.text.strip()
+    if len(pin) != 4 or not pin.isdigit():
+        await update.message.reply_text(
+            "❌ PIN must be 4 digits. Try again:"
+        )
+        return SETUP_PIN
+    context.user_data['new_pin'] = pin
+    await update.message.reply_text(
+        "Please confirm your transaction PIN"
+    )
+    return CONFIRM_PIN
+
+async def confirm_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    confirmed_pin = update.message.text.strip()
+    new_pin = context.user_data.get('new_pin')
+
+    if confirmed_pin != new_pin:
+        await update.message.reply_text(
+            "❌ PINs do not match. Please try again:"
+        )
+        return SETUP_PIN
+    
+    user_id = update.effective_user.id
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('UPDATE users SET transaction_pin = ? WHERE user_id = ?',
+                  (new_pin, user_id))
+    conn.commit()
+    conn.close()
+
+    await update.message.reply_text(
+        "✅ Transaction PIN set successfully."
+    )
+
+    if context.user_data.get('pending_airtime'):
+        phone = context.user.data.get('airtime_phone')
+        selected_network = context.user_data.get('airtime_network')
+        amount = context.user_data.get('airtime_amount')
+
+        keyboard = [
+            [InlineKeyboardButton("Back", callback_data="services")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"✅ Airtime purchase successful!\n\n"
+            f"📱 Phone: {phone}\n"
+            f"📶 Network: {selected_network}\n"
+            f"💵 Amount: ₦{amount}\n\n"
+            "Thank you for using KadickMoni!\n",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+
+        context.user_data.pop('pending_airtime', None)
+        context.user_data.pop('airtime_phone', None)
+        context.user_data.pop('airtime_network', None)
+        context.user_data.pop('airtime_amount', None)
+        context.user_data.clear()
+        return ConversationHandler.END
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+    
 async def start_buy_airtime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.callback_query.answer()
     await update.callback_query.message.reply_text(
@@ -687,10 +859,43 @@ async def receive_airtime_amount(update: Update, context: ContextTypes.DEFAULT_T
     if not amount.isdigit() or int(amount) <= 0:
         await update.message.reply_text(
             "Invalid amount.:"
-        
         )
         return BUY_AIRTIME_AMOUNT
     context.user_data["airtime_amount"] = amount
+
+    user_id = update.effective_user.id
+    conn = sqlite3.connect("users.db")
+    c = conn.cursor()
+    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    pin = c.fetchone()[0]
+    conn.close()
+
+    if not pin:
+        await update.message.reply_text(
+            "🔒 You need to create a transaction PIN first"
+        )
+        return await start_pin_setup(update, context)
+    
+    await update.message.reply_text(
+        "🔒 Enter your transaction PIN:"
+    )
+    return ENTER_PIN
+
+async def verify_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    entered_pin = update.message.text.strip()
+    user_id = update.effective_user.id
+
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    stored_pin = c.fetchone()[0]
+    conn.close()
+
+    if entered_pin != stored_pin:
+        await update.message.reply_text(
+            "❌ PIN is incorrect. Try again:"
+        )
+        return ENTER_PIN
 
     phone = context.user_data.get('airtime_phone')
     selected_network = context.user_data.get('airtime_network')
@@ -735,7 +940,8 @@ async def receive_data_phone(update: Update, context: ContextTypes.DEFAULT_TYPE)
     keyboard = [
         [InlineKeyboardButton("MTN", callback_data="MTN")],
         [InlineKeyboardButton("Airtel", callback_data="Airtel")],
-        [InlineKeyboardButton("Glo", callback_data="Glo")]
+        [InlineKeyboardButton("Glo", callback_data="Glo")],
+        [InlineKeyboardButton("9mobile", callback_data="9mobile")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -765,22 +971,80 @@ async def buy_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def receive_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     plan = update.message.text.strip()
-    if plan not in ["1", "2", "3", "4", "5"]:
+    plan_amounts = {
+        "1": ("1GB", "1000"),
+        "2": ("2GB", "2000"),
+        "3": ("5GB", "5000"),
+        "4": ("10GB", "10000"),
+        "5": ("500MB", "500"), 
+    }
+    if plan not in plan_amounts:
         await update.message.reply_text(
-            "❌ Invalid plan selected. Please choose a valid data plan:\n"
+            "❌ Invalid plan selected. Please choose a valid data plan:\n\n"
+            "1. 1GB - #1000\n"
+            "2. 2GB - #2000\n"
+            "3. 5GB - #5000\n"
+            "4. 10GB - #10000\n"
+            "5. 500MB - #500\n"
         )
         return BUY_DATA_PLAN
-
-
-async def receive_data_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    amount = update.message.text.strip()
+    
+    plan_name, amount = plan_amounts[plan]
+    context.user_data['data_plan'] = plan_name
     context.user_data['data_amount'] = amount
+
+
+    await update.message.reply_text(
+        f"💰 You selected {plan_name} for ₦{amount}.\n\n"
+        "🔒Enter your transaction PIN:"
+    )
+    return ENTER_DATA_PIN
+
+async def verify_data_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    entered_pin = update.message.text.strip()
+    user_id = update.effective_user.id
+
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    result = c.fetchone()
+    conn.close()
+
+    stored_pin = result[0] if result else None
+
+    if entered_pin != stored_pin:
+        await update.message.reply_text(
+            "❌ PIN is incorrect. Try again:"
+        )
+        return ENTER_DATA_PIN
 
     phone = context.user_data.get('data_phone')
     selected_network = context.user_data.get('data_network')
+    plan = context.user_data.get('data_plan')
     amount = context.user_data.get('data_amount')
-    
 
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="services")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        f"✅ Data purchase successful!\n\n"
+        f"📱 Phone: {phone}\n"
+        f"📶 Network: {selected_network}\n"
+        f"📦 Plan Selected: {plan}\n"
+        f"💵 Amount: ₦{amount}\n\n"
+        "Thank you for using KadickMoni!\n",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+    context.user_data.pop('data_phone', None)
+    context.user_data.pop('data_network', None)
+    context.user_data.pop('data_plan', None)
+    context.user_data.pop('data_amount', None)
+
+    return ConversationHandler.END
 
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
@@ -805,12 +1069,13 @@ def main() -> None:
             OTP_VERIFICATION: [MessageHandler(filters.TEXT &  ~filters.COMMAND, verify_otp)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        per_message=False
+        # per_message=True
     )
 
     # Login conversation handler
     login_conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("login", login)],
+        entry_points=[CommandHandler("login", login),
+                      CallbackQueryHandler(login, pattern="^login$")],
         states={
            PHONE_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_login_phone)],
            PASSWORD_LOGIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_login_password)]
@@ -832,34 +1097,54 @@ def main() -> None:
         GENDER: [CallbackQueryHandler(receive_gender, pattern="(?i)^male|female$")],
         DOB: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_dob)]
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("cancel", cancel)],
+        # per_message=True
     )
 
     buy_airtime_conv_handler = ConversationHandler(
         entry_points=[
             CallbackQueryHandler(start_buy_airtime, pattern="^buy_airtime$")],
             states={
-                BUY_AIRTIME_PHONE:[MessageHandler(filters.TEXT & ~filters.COMMAND, receive_airtime_phone)],
+                BUY_AIRTIME_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_airtime_phone)],
                 BUY_AIRTIME_NETWORK: [CallbackQueryHandler(airtime_network)],
-                BUY_AIRTIME_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_airtime_amount)]
-
+                BUY_AIRTIME_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_airtime_amount)],
+                ENTER_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_pin)],
+                SETUP_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, setup_pin)],
+                CONFIRM_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_pin)]
             },
             fallbacks=[CommandHandler("cancel", cancel)],
+            # per_message=True
+    )
+
+    buy_data_conv_handler = ConversationHandler(
+        entry_points=[
+          CallbackQueryHandler(start_buy_data, pattern="^buy_data$")],
+          states={
+            BUY_DATA_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_data_phone)],
+            BUY_DATA_PLAN: [CallbackQueryHandler(buy_data_plan),
+                              MessageHandler(filters.TEXT & ~filters.COMMAND, receive_data_plan)],
+            ENTER_DATA_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_data_pin)]
+
+          },
+          fallbacks=[CommandHandler("cancel", cancel)],
+        # per_message=True
     )
 
     # Register handlers
     # application.add_handler(CallbackQueryHandler(register, pattern="^register$"))
-    application.add_handler(CallbackQueryHandler(login, pattern="^login$"))
+    # application.add_handler(CallbackQueryHandler(login, pattern="^login$"))
     application.add_handler(CallbackQueryHandler(help, pattern="^help$"))
     application.add_handler(CallbackQueryHandler(services, pattern="^services$"))
     application.add_handler(CallbackQueryHandler(other_services, pattern="^other_services$"))
+    application.add_handler(CallbackQueryHandler(services, pattern="^full_services$"))
     application.add_handler(CallbackQueryHandler(back_to_login, pattern="^back_to_login$"))
 
-    # register other han
+    # register other handlers
     application.add_handler(conv_handler)
     application.add_handler(login_conv_handler)
     application.add_handler(registration_conv_handler)
     application.add_handler(buy_airtime_conv_handler)
+    application.add_handler(buy_data_conv_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("continue", continue_))
