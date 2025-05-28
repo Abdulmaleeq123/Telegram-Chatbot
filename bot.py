@@ -45,7 +45,8 @@ TOKEN = "7077237001:AAGr3WoBn4D3pN9dvohsYII5v-ym5h__ja8"  # Replace with your bo
 FIRST_NAME, LAST_NAME, PHONE, ADDRESS, STATE, LGA, REFERRAL_CODE, OTP_VERIFICATION, PASSWORD,\
 CONFIRM_PASSWORD, CONTINUE, EMAIL, PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, ACCOUNT_NUMBER,\
 GENDER, DOB, BUY_AIRTIME_PHONE, BUY_AIRTIME_NETWORK, BUY_AIRTIME_AMOUNT, BUY_DATA_PHONE,\
-BUY_DATA_PLAN, SETUP_PIN, CONFIRM_PIN, ENTER_PIN, ENTER_DATA_PIN = range(28)
+BUY_DATA_PLAN, SETUP_PIN, CONFIRM_PIN, ENTER_PIN, ENTER_DATA_PIN, ELECTRICITY_BILLER,\
+ELECTRICITY_PAYMENT_TYPE, ELECTRICITY_METER_NUMBER = range(31)
 
 # Email validation pattern
 EMAIL_PATTERN = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
@@ -224,44 +225,176 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
     user_id = update.effective_user.id
-
-    if context.user_data.get('logged_in'):
-        await update.callback_query.message.reply_text(
-            "✅ You are already logged in.\n"
-        )
-        return
-            
-
+    
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''SELECT bvn, bank_name, account_number FROM users 
-               WHERE user_id = ? AND bvn IS NOT NULL 
-               AND bank_name IS NOT NULL 
-               AND account_number IS NOT NULL''', (user_id,))
-    existing_details = c.fetchone()
+               WHERE user_id = ? ''', (user_id,))
+    user_data = c.fetchone()
     conn.close()
 
-    if existing_details:
+    if not user_data:
+        await update.callback_query.message.reply_text(
+            "You need to complete your registration to access other services.\n"
+        )
+        return
+    bvn, bank_name, account_number = user_data
+    has_completed_second_phase = all([bvn, bank_name, account_number])
+
+    has_completed_second_phase = check_registration_completion(user_id)
+
+    if has_completed_second_phase:
         keyboard = [
-            [InlineKeyboardButton("Login", callback_data="login")],
+            [InlineKeyboardButton("Back", callback_data="full_services")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.callback_query.message.reply_text(
-            "✅ You've already completed the second phase of registration:\n\n"
-                "Please login to access services.",
-                reply_markup=reply_markup
+            "✅ You've completed the second phase of registration:\n\n"
+            "You can now access other services.",
+            reply_markup=reply_markup
         )
     else:
         keyboard = [
-        [InlineKeyboardButton("Continue", callback_data="continue_registration")],
-        [InlineKeyboardButton("Back", callback_data="services")]
+            [InlineKeyboardButton("Continue", callback_data="continue_registration")],
+            [InlineKeyboardButton("Back", callback_data="services")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.message.reply_text(
+            "You need to continue your registration to have access to other services\n"
+            "Click on continue to proceed.",
+            reply_markup=reply_markup
+        )
+
+async def pay_bills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    keyboard = [
+        [InlineKeyboardButton("Electricity", callback_data="electricity")],
+        [InlineKeyboardButton("Cable TV", callback_data="cable_tv")],
+        [InlineKeyboardButton("Education", callback_data="education")],
+        [InlineKeyboardButton("Betting", callback_data="betting")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
-        "You need to continue your registration to have access to other services\n"
-        "Click on continue to proceed.",
+        "💡 Please select a Bill payment",
         reply_markup=reply_markup
+    )
+
+async def start_buy_electricity(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    keyboard = [
+        [InlineKeyboardButton("Eko Electric", callback_data="eko_electricity")],
+        [InlineKeyboardButton("Ikeja Disco Electric", callback_data="ikeja_disco_electricity")],
+        [InlineKeyboardButton("Kaduna Electric", callback_data="kaduna_electricity")],
+        [InlineKeyboardButton("Port Harcourt Electric", callback_data="port_harcourt_electricity")],
+        [InlineKeyboardButton("Abuja Electric", callback_data="abuja_electricity")],
+        [InlineKeyboardButton("Ibadan Disco Electric", callback_data="ibadan_electricity")],
+        [InlineKeyboardButton("JOS Electricity Distribution", callback_data="jos_electricity")],
+        [InlineKeyboardButton("Kano Electricity Distribution", callback_data="kano_electricity")],
+        [InlineKeyboardButton("Benin Electricity Distribution", callback_data="benin_electricity")],
+        ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.message.reply_text(
+        "Please select a *Biller*",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+async def select_electricity_biller(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    biller = query.data
+    context.user_data['electricity_biller'] = biller
+
+    biller_names = {
+        "eko_electricity": "Eko Electric",
+        "ikeja_disco_electricity": "Ikeja Disco Electric",
+        "kaduna_electricity": "Kaduna Electric",
+        "port_harcourt_electricity": "Port Harcourt Electric",
+        "abuja_electricity": "Abuja Electric",
+        "ibadan_electricity": "Ibadan Disco Electric",
+        "jos_electricity": "JOS Electricity Distribution",
+        "kano_electricity": "Kano Electricity Distribution",
+        "benin_electricity": "Benin Electricity Distribution"
+        }
+    
+    context.user_data['biller_name'] = biller_names.get(biller, biller)
+
+    keyboard = [
+        [InlineKeyboardButton("Prepaid", callback_data="prepaid")],
+        [InlineKeyboardButton("Postpaid", callback_data="postpaid")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        text=f"Selected biller: *{context.user_data['biller_name']}*\n\n"
+              "Please select a payment type",
+              parse_mode='Markdown',
+              reply_markup=reply_markup
+    )
+    return ELECTRICITY_PAYMENT_TYPE
+
+async def receive_payment_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    payment_type = query.data
+    context.user_data['payment_type'] = payment_type.capitalize()
+
+    await query.edit_message_text(
+        "Please enter your *Meter Number*:",
+        parse_mode='Markdown'
+    )
+    return ELECTRICITY_METER_NUMBER
+
+async def receive_meter_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    meter_number = update.message.text.strip()
+
+    if not meter_number.isdigit() or len(meter_number) < 6:
+        await update.message.reply_text("❌ Invalid meter number. Please enter a valid meter number:")
+        return ELECTRICITY_METER_NUMBER
+    
+    context.user_data['meter_number'] = meter_number
+
+    success_message = (
+        f"✅ *Electricity Payment Successful!*\n\n"
+        f"• Biller: {context.user_data['biller_name']}\n"
+        f"• Payment Type: {context.user_data['payment_type']}\n"
+        f"• Meter Number: {meter_number}\n\n"
+        "Thank you for using KadickMoni!"
         )
+    
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="full_services")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        success_message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+
+    context.user_data.pop('electricity_biller', None)
+    context.user_data.pop('biller_name', None)
+    context.user_data.pop('payment_type', None)
+    context.user_data.pop('meter_number', None)
+    
+    return ConversationHandler.END
+
+async def start_buy_cable_tv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    keyboard = [
+        [InlineKeyboardButton("DSTV", callback_data="dstv")],
+        [InlineKeyboardButton("GOTV", callback_data="gotv")],
+        [InlineKeyboardButton("Startimes", callback_data="startimes")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.message.reply_text(
+        "Please select a biller",
+        reply_markup=reply_markup
+    )
+
 
 async def back_to_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -440,8 +573,8 @@ async def verify_otp(update: Update, context:ContextTypes.DEFAULT_TYPE) -> int:
 
     if user_input == stored_otp:
         await update.message.reply_text(
-            "✅ OTP verified!\n"\
-            "Create your password.\n " \
+            "✅ OTP verified!\n"
+            "Create your password.\n"
             "Must be at least 8 characters and " \
             "contain at least one special character and one number."
         )
@@ -515,8 +648,8 @@ async def confirm_password(update: Update, context:ContextTypes.DEFAULT_TYPE) ->
             
             confirmation = (
                 f"✅ *Registration Successful!* 🎉\n\n"
-                f"Here are your details:\n"
-                f"👤 **Name**: {context.user_data['first_name']} {context.user_data['last_name']}\n"
+                f"Here are your details:\n\n"
+                f"👤 **Name**: {context.user_data['last_name']} {context.user_data['first_name']}\n"
                 f"📞 **Phone**: {context.user_data['phone']}\n"
                 f"🏠 **Address**: {context.user_data['address']}\n"
                 f"📍 **State**: {context.user_data['state']}\n"
@@ -564,20 +697,20 @@ async def registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     existing_details = c.fetchone()
     conn.close()
 
-    if existing_details:
-        if update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.message.reply_text(
-                "✅ You've already completed the second phase of registration:\n\n"
-                "Please login to access services."
-                )
-            return ConversationHandler.END
-        else:
-            await update.message.reply_text(
-                "✅ You've already completed your registration!\n"
-                "Please login to access services."
-            )
-            return ConversationHandler.END
+    # if existing_details:
+    #     if update.callback_query:
+    #         await update.callback_query.answer()
+    #         await update.callback_query.message.reply_text(
+    #             "✅ You've already completed the second phase of registration:\n\n"
+    #             "Please login to access services."
+    #             )
+    #         return ConversationHandler.END
+    #     else:
+    #         await update.message.reply_text(
+    #             "✅ You've already completed your registration!\n"
+    #             "Please login to access services."
+    #         )
+    #         return ConversationHandler.END
     if update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.message.reply_text(
@@ -719,7 +852,7 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         conn.close()
 
         keyboard = [
-            [InlineKeyboardButton("Continue", callback_data="continue")]
+            [InlineKeyboardButton("Services", callback_data="full_services")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -775,11 +908,11 @@ async def confirm_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     conn.close()
 
     await update.message.reply_text(
-        "✅ Transaction PIN set successfully."
+        "Transaction PIN set successfully!"
     )
 
     if context.user_data.get('pending_airtime'):
-        phone = context.user.data.get('airtime_phone')
+        phone = context.user_data.get('airtime_phone')
         selected_network = context.user_data.get('airtime_network')
         amount = context.user_data.get('airtime_amount')
 
@@ -804,9 +937,32 @@ async def confirm_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         context.user_data.clear()
         return ConversationHandler.END
     
-    context.user_data.clear()
-    return ConversationHandler.END
+    elif context.user_data.get('pending_data'):
+        phone = context.user_data.get('data_phone')
+        selected_network = context.user_data.get('data_network')
+        plan = context.user_data.get('data_plan')
+        amount = context.user_data.get('data_amount')
 
+        keyboard = [
+            [InlineKeyboardButton("Back", callback_data="services")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            f"✅ Data Purchase Successfult!\n\n"
+            f"📱 Phone: {phone}\n"
+            f"📶 Network: {selected_network}\n"
+            f"💵 Amount: ₦{amount}\n\n"
+            "Thank you for using KadickMoni!\n",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        context.user_data.pop('pending_data', None)
+        context.user_data.pop('data_phone', None)
+        context.user_data.pop('data_network', None)
+        context.user_data.pop('data_plan', None)
+        context.user_data.pop('data_amount', None)
+        context.user_data.clear()
+        return ConversationHandler.END
     
 async def start_buy_airtime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.callback_query.answer()
@@ -871,13 +1027,15 @@ async def receive_airtime_amount(update: Update, context: ContextTypes.DEFAULT_T
     conn.close()
 
     if not pin:
+        context.user_data['pending_airtime'] = True
         await update.message.reply_text(
-            "🔒 You need to create a transaction PIN first"
+            "🔒 You need to create a transaction PIN first."
         )
-        return await start_pin_setup(update, context)
+        await start_pin_setup(update, context)
+        return SETUP_PIN
     
     await update.message.reply_text(
-        "🔒 Enter your transaction PIN:"
+        "🔒 Enter your transaction PIN."
     )
     return ENTER_PIN
 
@@ -901,8 +1059,11 @@ async def verify_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     selected_network = context.user_data.get('airtime_network')
     amount = context.user_data.get('airtime_amount')
 
+    completed = check_registration_completion(user_id)
+    back_target = "full_services" if completed else "services"
+
     keyboard = [
-        [InlineKeyboardButton("Back", callback_data="services")]
+        [InlineKeyboardButton("Back", callback_data=back_target)]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
@@ -993,6 +1154,20 @@ async def receive_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['data_plan'] = plan_name
     context.user_data['data_amount'] = amount
 
+    user_id = update.effective_user.id
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    stored_pin = c.fetchone()[0]
+    conn.close()
+
+    if not stored_pin:
+        context.user_data['pending_data'] = True
+        await update.message.reply_text(
+            "You need to create a transaction PIN first"
+        )
+        await start_pin_setup(update, context)
+        return SETUP_PIN
 
     await update.message.reply_text(
         f"💰 You selected {plan_name} for ₦{amount}.\n\n"
@@ -1023,8 +1198,11 @@ async def verify_data_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     plan = context.user_data.get('data_plan')
     amount = context.user_data.get('data_amount')
 
+    completed = check_registration_completion(user_id)
+    back_target = "full_services" if completed else "services"
+
     keyboard = [
-        [InlineKeyboardButton("Back", callback_data="services")]
+        [InlineKeyboardButton("Back", callback_data=back_target)]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -1045,6 +1223,18 @@ async def verify_data_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     context.user_data.pop('data_amount', None)
 
     return ConversationHandler.END
+
+def check_registration_completion(user_id):
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''SELECT bvn, bank_name, account_number FROM users 
+               WHERE user_id = ?''', (user_id,))
+    user_data = c.fetchone()
+    conn.close()
+    if user_data:
+        bvn, bank_name, account_number = user_data
+        return all([bvn, bank_name, account_number])
+    return False
 
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
@@ -1123,11 +1313,25 @@ def main() -> None:
             BUY_DATA_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_data_phone)],
             BUY_DATA_PLAN: [CallbackQueryHandler(buy_data_plan),
                               MessageHandler(filters.TEXT & ~filters.COMMAND, receive_data_plan)],
-            ENTER_DATA_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_data_pin)]
+            ENTER_DATA_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, verify_data_pin)],
+            SETUP_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, setup_pin)],
+            CONFIRM_PIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, confirm_pin)]
 
           },
           fallbacks=[CommandHandler("cancel", cancel)],
         # per_message=True
+    )
+
+    electricity_conv_handler = ConversationHandler(
+        entry_points=[
+             CallbackQueryHandler(
+                select_electricity_biller, 
+                pattern="^(eko|ikeja_disco|kaduna|port_harcourt|abuja|ibadan|jos|kano|benin)_electricity$")],
+            states={
+                ELECTRICITY_PAYMENT_TYPE: [CallbackQueryHandler(receive_payment_type, pattern="^(prepaid|postpaid)$")],
+                ELECTRICITY_METER_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_meter_number)]
+            },
+            fallbacks=[CommandHandler("Cancel", cancel)]    
     )
 
     # Register handlers
@@ -1136,8 +1340,11 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(help, pattern="^help$"))
     application.add_handler(CallbackQueryHandler(services, pattern="^services$"))
     application.add_handler(CallbackQueryHandler(other_services, pattern="^other_services$"))
-    application.add_handler(CallbackQueryHandler(services, pattern="^full_services$"))
+    application.add_handler(CallbackQueryHandler(full_services, pattern="^full_services$"))
     application.add_handler(CallbackQueryHandler(back_to_login, pattern="^back_to_login$"))
+    application.add_handler(CallbackQueryHandler(pay_bills, pattern="^pay_bills$"))
+    application.add_handler(CallbackQueryHandler(start_buy_electricity, pattern="^electricity$"))
+    application.add_handler(CallbackQueryHandler(start_buy_cable_tv, pattern="^cable_tv$"))
 
     # register other handlers
     application.add_handler(conv_handler)
@@ -1145,6 +1352,7 @@ def main() -> None:
     application.add_handler(registration_conv_handler)
     application.add_handler(buy_airtime_conv_handler)
     application.add_handler(buy_data_conv_handler)
+    application.add_handler(electricity_conv_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("continue", continue_))
