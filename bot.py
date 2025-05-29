@@ -62,7 +62,7 @@ reply_markup = InlineKeyboardMarkup(keyboard)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_message = (
         "👋 Welcome to *Kadick Integrated Limited*!\n\n"
-        "This is the official bot for *KadickMoni* — your trusted platform for *airtime and data vending*, "
+        "This is the official bot for *KadickMoni* your trusted platform for *airtime and data vending*, "
         "designed to help agents and customers transact seamlessly.\n\n"
         "💡 What we offer here:\n"
         "• Register as a new agent or user\n"
@@ -80,8 +80,7 @@ async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         '/register - Register your details\n'
         '/login - Login to your account\n'
         '/help - Show help\n'
-        '/start - Show the welcome message\n'
-        '/continue - Proceed to second phase of registration\n'
+        '/start - Show the welcome message\n'        
     )
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -249,6 +248,40 @@ async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         parse_mode='Markdown',
         reply_markup=reply_markup
     )
+
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    
+    context.user_data.clear()
+    
+    
+    welcome_message = (
+        "👋 Welcome to *Kadick Integrated Limited*!\n\n"
+        "This is the official bot for *KadickMoni* your trusted platform for *airtime and data vending*, "
+        "designed to help agents and customers transact seamlessly.\n\n"
+        "💡 What we offer here:\n"
+        "• Register as a new agent or user\n"
+        "• Get information about your wallet balance\n"
+        "• Vend airtime or data\n"
+        "• Access support\n\n"
+        "To get started, please choose an option below:\n\n"
+    )
+    keyboard = [
+        [InlineKeyboardButton("Register", callback_data="register")],
+        [InlineKeyboardButton("Login", callback_data="login")],
+        [InlineKeyboardButton("Help", callback_data="help")],
+    ] 
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.edit_message_text(
+        text=welcome_message,
+        parse_mode='Markdown',
+        reply_markup=reply_markup
+    )
+    return ConversationHandler.END
+
 
 async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
@@ -684,7 +717,22 @@ async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             parse_mode='Markdown'
         )
         return PHONE
+    
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('SELECT user_id FROM users WHERE phone = ?', (update.message.text,))
+    existing_user = c.fetchone()
+    conn.close()
+
+    if existing_user:
+        await update.message.reply_text(
+            "❌ This phone number is already registered.\n"
+            "Please login with /login or use a different phone number."
+        )
+        return ConversationHandler.END
+    
     context.user_data['phone'] = update.message.text
+    
     await update.message.reply_text(
         "🏠 Enter your *Residential Address*:",
         parse_mode='Markdown'
@@ -1566,6 +1614,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(start_education, pattern="^education$"))
     application.add_handler(CallbackQueryHandler(start_betting, pattern="^betting$"))
     application.add_handler(CallbackQueryHandler(show_my_profile, pattern="^my_profile$"))
+    application.add_handler(CallbackQueryHandler(logout, pattern="^logout$"))
 
     # register other handlers
     application.add_handler(conv_handler)
