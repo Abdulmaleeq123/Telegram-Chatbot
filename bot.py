@@ -162,7 +162,6 @@ async def receive_login_password(update: Update, context: ContextTypes.DEFAULT_T
                 [InlineKeyboardButton("My Profile", callback_data="my_profile")],
                 [InlineKeyboardButton("Logout", callback_data="logout")],
             ]
-        # context.user_data['logged_in'] = True
         else:
             keyboard = [
             [InlineKeyboardButton("Services", callback_data="services")],
@@ -211,6 +210,43 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
         "🔧 Please choose an option:", 
+        reply_markup=reply_markup
+    )
+
+async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute('''SELECT first_name, last_name, phone, email, address 
+               FROM users WHERE user_id = ?''', (user_id,))
+    user_data = c.fetchone()
+    conn.close()
+
+    if not user_data:
+        await query.message.reply_text("❌ User profile not found.")
+        return
+    
+    first_name, last_name, phone, email, address = user_data
+    
+    profile_message = (
+        "👤 *Your Profile*\n\n"
+        f"• **Full Name**: {last_name} {first_name}\n"
+        f"• **Phone Number**: {phone}\n"
+        f"• **Email**: {email if email else 'Not provided'}\n"
+        f"• **Residential Address**: {address}\n"
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="back_to_login")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await query.message.reply_text(
+        profile_message,
+        parse_mode='Markdown',
         reply_markup=reply_markup
     )
 
@@ -1529,6 +1565,7 @@ def main() -> None:
     application.add_handler(CallbackQueryHandler(start_buy_cable_tv, pattern="^cable_tv$"))
     application.add_handler(CallbackQueryHandler(start_education, pattern="^education$"))
     application.add_handler(CallbackQueryHandler(start_betting, pattern="^betting$"))
+    application.add_handler(CallbackQueryHandler(show_my_profile, pattern="^my_profile$"))
 
     # register other handlers
     application.add_handler(conv_handler)
