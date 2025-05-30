@@ -544,10 +544,10 @@ async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"✅ Cable TV Top Up Purchase\n\n"
-        f"Biller: {context.user_data['dstv_biller']}\n"
-        f"Package: {context.user_data['dstv_package']}\n"
-        f"Amount: {context.user_data['dstv_amount']}\n"
-        f"Phone: {snumber}\n\n"
+        f"• Biller: {context.user_data['dstv_biller']}\n"
+        f"• Package: {context.user_data['dstv_package']}\n"
+        f"• Amount: {context.user_data['dstv_amount']}\n"
+        f"• Smartcard Number: {snumber}\n\n"
         "Thank You for using KadickMoni",
         reply_markup=reply_markup
     )
@@ -619,10 +619,10 @@ async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"✅ Cable TV Top Up Purchase\n\n"
-        f"Biller: {context.user_data['gotv_biller']}\n"
-        f"Package: {context.user_data['gotv_package']}\n"
-        f"Amount: {context.user_data['gotv_amount']}\n"
-        f"Phone: {snumber}\n\n"
+        f"• Biller: {context.user_data['gotv_biller']}\n"
+        f"• Package: {context.user_data['gotv_package']}\n"
+        f"• Amount: {context.user_data['gotv_amount']}\n"
+        f"• Smartcard Number: {snumber}\n\n"
         "Thank You for using KadickMoni",
         reply_markup=reply_markup
     )
@@ -686,9 +686,34 @@ async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT
         await update.message.reply_text(
             "❌ Invalid smartcard number. "
         )
-        return STARTIMES_SMARTCARD_NUMBER
-    
-    context.user_data['start_snumber'] = snumber
+        
+        if 'dstv_biller' in context.user_data:
+            return DSTV_SMARTCARD_NUMBER
+        elif 'gotv_biller' in context.user_data:
+            return GOTV_SMARTCARD_NUMBER
+        elif 'start_biller' in context.user_data:
+            return STARTIMES_SMARTCARD_NUMBER
+        else:
+            return ConversationHandler.END
+        
+    if 'dstv_biller' in context.user_data:
+        context.user_data['dstv_snumber'] = snumber
+        biller = context.user_data['dstv_biller']
+        package = context.user_data['dstv_package']
+        amount = context.user_data['dstv_amount']
+        service = "DSTV"
+    elif 'gotv_biller' in context.user_data:
+        context.user_data['gotv_snumber'] = snumber
+        biller = context.user_data['gotv_biller']
+        package = context.user_data['gotv_package']
+        amount = context.user_data['gotv_amount']
+        service = "GOTV"
+    elif 'start_biller' in context.user_data:
+        context.user_data['start_snumber'] = snumber
+        biller = context.user_data['start_biller']
+        package = context.user_data['start_package']
+        amount = context.user_data['start_amount']
+        service = "Startimes"
 
     keyboard = [
         [InlineKeyboardButton("Back", callback_data="full_services")],
@@ -696,10 +721,10 @@ async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"✅ Cable TV Top Up Purchase\n\n"
-        f"Biller: {context.user_data['start_biller']}\n"
-        f"Package: {context.user_data['start_package']}\n"
-        f"Amount: {context.user_data['start_amount']}\n"
-        f"Phone: {snumber}\n\n"
+        f"• Biller: {biller}\n"
+        f"• Package: {package}\n"
+        f"• Amount: {amount}\n"
+        f"• Smartcard Number: {snumber}\n\n"
         "Thank You for using KadickMoni",
         reply_markup=reply_markup
     )
