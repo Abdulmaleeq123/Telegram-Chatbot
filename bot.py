@@ -47,7 +47,9 @@ CONFIRM_PASSWORD, CONTINUE, EMAIL, PHONE_LOGIN, PASSWORD_LOGIN, BVN, BANK_NAME, 
 GENDER, DOB, BUY_AIRTIME_PHONE, BUY_AIRTIME_NETWORK, BUY_AIRTIME_AMOUNT, BUY_DATA_PHONE,\
 BUY_DATA_PLAN, SETUP_PIN, CONFIRM_PIN, ENTER_PIN, ENTER_DATA_PIN, ELECTRICITY_BILLER,\
 ELECTRICITY_PAYMENT_TYPE, ELECTRICITY_METER_NUMBER, ELECTRICITY_AMOUNT,\
-BUY_WAEC_PIN, WAEC_PHONE_NUMBER, BET_ID, BET_AMOUNT = range(36)
+BUY_WAEC_PIN, WAEC_PHONE_NUMBER, BET_ID, BET_AMOUNT, BUY_DSTV_PACKAGE, DSTV_SMARTCARD_NUMBER,\
+BUY_GOTV_PACKAGE, GOTV_SMARTCARD_NUMBER, BUY_STARTIMES_PACKAGE,\
+STARTIMES_SMARTCARD_NUMBER = range(42)
 
 # Email validation pattern
 EMAIL_PATTERN = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
@@ -466,9 +468,9 @@ async def receive_electricity_amount(update: Update, context: ContextTypes.DEFAU
 async def start_buy_cable_tv(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
     keyboard = [
-        [InlineKeyboardButton("DSTV", callback_data="dstv")],
-        [InlineKeyboardButton("GOTV", callback_data="gotv")],
-        [InlineKeyboardButton("Startimes", callback_data="startimes")],
+        [InlineKeyboardButton("DSTV", callback_data="Dstv")],
+        [InlineKeyboardButton("GOTV", callback_data="GOtv")],
+        [InlineKeyboardButton("Startimes", callback_data="Startimes")],
         [InlineKeyboardButton("Back", callback_data="pay_bills")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -476,6 +478,233 @@ async def start_buy_cable_tv(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "Please select a biller",
         reply_markup=reply_markup
     )
+
+async def select_dstv_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    selected_package = query.data
+    context.user_data['dstv_biller'] = selected_package
+    await query.edit_message_text(
+        text=f"Selected Package: {selected_package}"
+    )
+
+    await query.message.reply_text(
+        "Select a package:\n"
+        "1. DSTV Access - #2000\n"
+        "2. DSTV Family - #4000\n"
+        "3. DSTV Compact - #19000\n"
+        "4. DSTV Compact Plus - #30000\n"
+        "5. DSTV Premium - #44500\n"
+    )
+    return BUY_DSTV_PACKAGE
+
+async def receive_dstv_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    plan = update.message.text.strip()
+    plan_package = {
+        "1": ("DSTV Access", "2000"),
+        "2": ("DSTV Family", "4000"),
+        "3": ("DSTV Compact", "19000"),
+        "4": ("DSTV Compact Plus", "30000"),
+        "5": ("DSTV Premium", "44500"),
+    }
+    if plan not in plan_package:
+        await update.message.reply_text(
+        "Invalid Package selected. Please choose a valid package:\n\n"
+        "1. DSTV Access - #2000\n"
+        "2. DSTV Family - #4000\n"
+        "3. DSTV Compact - #19000\n"
+        "4. DSTV Compact Plus - #30000\n"
+        "5. DSTV Premium - #44500\n"
+        )
+        return BUY_DSTV_PACKAGE
+    plan_name, amount = plan_package[plan]
+    context.user_data['dstv_package'] = plan_name
+    context.user_data['dstv_amount'] = amount
+
+    await update.message.reply_text(
+        "Enter your *SMARTCARD NUMBER*:",
+        parse_mode='Markdown'
+    )
+    return DSTV_SMARTCARD_NUMBER
+
+async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    snumber = update.message.text.strip()
+    if not snumber.isdigit or len(snumber) != 10:
+        await update.message.reply_text(
+            "❌ Invalid smartcard number. "
+        )
+        return DSTV_SMARTCARD_NUMBER
+    
+    context.user_data['dstv_snumber'] = snumber
+
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="full_services")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"✅ Cable TV Top Up Purchase\n\n"
+        f"Biller: {context.user_data['dstv_biller']}\n"
+        f"Package: {context.user_data['dstv_package']}\n"
+        f"Amount: {context.user_data['dstv_amount']}\n"
+        f"Phone: {snumber}\n\n"
+        "Thank You for using KadickMoni",
+        reply_markup=reply_markup
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def select_gotv_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    selected_package = query.data
+    context.user_data['gotv_biller'] = selected_package
+    await query.edit_message_text(
+        text=f"Selected Package: {selected_package}"
+    )
+    await query.message.reply_text(
+        "Select a package\n"
+        "1. GOTV Jinja - #3900\n"
+        "2. GOTV Jolli - #5800\n"
+        "3. GOTV Max - #8500\n"
+        "4. GOTV Supa - #11400\n"
+        "5. GOTV Supa Plus - #12500\n"
+    )
+    return BUY_GOTV_PACKAGE
+
+async def receive_gotv_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    plan = update.message.text.strip()
+    plan_package = {
+        "1": ("GOTV Jinja", "3900"),
+        "2": ("GOTV Jolli", "5800"),
+        "3": ("GOTV Max", "8500"),
+        "4": ("GOTV Supa", "11400"),
+        "5": ("GOTV Supa Plus", "12500"),
+    }
+    if plan not in plan_package:
+        await update.message.reply_text(
+        "Invalid Package selected. Please choose a valid package\n"
+        "1. GOTV Jinja - #3900\n"
+        "2. GOTV Jolli - #5800\n"
+        "3. GOTV Max - #8500\n"
+        "4. GOTV Supa - #11400\n"
+        "5. GOTV Supa Plus - #12500\n"
+        )
+        return BUY_GOTV_PACKAGE
+    
+    plan_name, amount = plan_package[plan]
+    context.user_data['gotv_package'] = plan_name
+    context.user_data['gotv_amount'] = amount
+
+    await update.message.reply_text(
+        "Enter your *SMARTCARD NUMBER*:",
+        parse_mode='Markdown'
+    )
+    return GOTV_SMARTCARD_NUMBER
+
+async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    snumber = update.message.text.strip()
+    if not snumber.isdigit or len(snumber) != 10:
+        await update.message.reply_text(
+            "❌ Invalid smartcard number. "
+        )
+        return GOTV_SMARTCARD_NUMBER
+    
+    context.user_data['gotv_snumber'] = snumber
+
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="full_services")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"✅ Cable TV Top Up Purchase\n\n"
+        f"Biller: {context.user_data['gotv_biller']}\n"
+        f"Package: {context.user_data['gotv_package']}\n"
+        f"Amount: {context.user_data['gotv_amount']}\n"
+        f"Phone: {snumber}\n\n"
+        "Thank You for using KadickMoni",
+        reply_markup=reply_markup
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def select_startimes_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    selected_package = query.data
+    context.user_data['start_biller'] = selected_package
+    await query.edit_message_text(
+        text=f"Selected Package: {selected_package}"
+    )
+    await query.message.reply_text(
+        "Select a package\n"
+        "1. Basic Dish (Monthly) - #4700\n"
+        "2. Basic Dish (Weekly) - #1550\n"
+        "3. Classic Dish (Monthly) - #6800\n"
+        "4. Classic Dish (Weekly) - #2300\n"
+        "5. Global Dish (Monthly) - #19000\n"
+        "6. Global Dish (Weekly) - #6500\n"
+    )
+    return BUY_STARTIMES_PACKAGE
+
+async def receive_startimes_package(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    plan = update.message.text.strip()
+    plan_package = {
+        "1": ("Basic Dish (Monthly)", "4700"),
+        "2": ("Basic Dish (Weekly)", "1550"),
+        "3": ("Classic Dish (Monthly)", "6800"),
+        "4": ("Classic Dish (Weekly)", "2300"),
+        "5": ("Global Dish (Monthly)", "19000"),
+        "6": ("Global Dish (Weekly)", "6500"),
+    }
+    if plan not in plan_package:
+        await update.message.reply_text(
+        "Invalid Package selected. Please choose a valid package\n"
+        "1. Basic Dish (Monthly) - #4700\n"
+        "2. Basic Dish (Weekly) - #1550\n"
+        "3. Classic Dish (Monthly) - #6800\n"
+        "4. Classic Dish (Weekly) - #2300\n"
+        "5. Global Dish (Monthly) - #19000\n"
+        "6. Global Dish (Weekly) - #6500\n"
+        )
+        return BUY_STARTIMES_PACKAGE
+    
+    plan_name, amount = plan_package[plan]
+    context.user_data['start_package'] = plan_name
+    context.user_data['start_amount'] = amount
+
+    await update.message.reply_text(
+        "Enter your *SMARTCARD NUMBER*:",
+        parse_mode='Markdown'
+    )
+    return STARTIMES_SMARTCARD_NUMBER
+
+async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    snumber = update.message.text.strip()
+    if not snumber.isdigit or len(snumber) != 10:
+        await update.message.reply_text(
+            "❌ Invalid smartcard number. "
+        )
+        return STARTIMES_SMARTCARD_NUMBER
+    
+    context.user_data['start_snumber'] = snumber
+
+    keyboard = [
+        [InlineKeyboardButton("Back", callback_data="full_services")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        f"✅ Cable TV Top Up Purchase\n\n"
+        f"Biller: {context.user_data['start_biller']}\n"
+        f"Package: {context.user_data['start_package']}\n"
+        f"Amount: {context.user_data['start_amount']}\n"
+        f"Phone: {snumber}\n\n"
+        "Thank You for using KadickMoni",
+        reply_markup=reply_markup
+    )
+    context.user_data.clear()
+    return ConversationHandler.END
 
 async def start_education(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
@@ -1605,6 +1834,39 @@ def main() -> None:
     fallbacks=[CommandHandler("cancel", cancel)]
     )
 
+    dstv_conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(select_dstv_package, pattern="^Dstv$")
+        ],
+        states={
+            BUY_DSTV_PACKAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_dstv_package)],
+            DSTV_SMARTCARD_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_smartcard_number)]
+        },
+        fallbacks=[CommandHandler("cancel",  cancel)]
+    )
+
+    gotv_conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(select_gotv_package, pattern="^GOtv$")
+        ],
+        states={
+            BUY_GOTV_PACKAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_gotv_package)],
+            GOTV_SMARTCARD_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_smartcard_number)]
+        },
+        fallbacks=[CommandHandler("cancel",  cancel)]
+    )
+    
+    startimes_conv_handler = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(select_startimes_package, pattern="^Startimes$")
+        ],
+        states={
+            BUY_STARTIMES_PACKAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_startimes_package)],
+            STARTIMES_SMARTCARD_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_smartcard_number)]
+        },
+        fallbacks=[CommandHandler("cancel",  cancel)]
+    )
+
     # Register handlers
     # application.add_handler(CallbackQueryHandler(register, pattern="^register$"))
     # application.add_handler(CallbackQueryHandler(login, pattern="^login$"))
@@ -1630,6 +1892,9 @@ def main() -> None:
     application.add_handler(electricity_conv_handler)
     application.add_handler(education_conv_handler)
     application.add_handler(bet_conv_handler)
+    application.add_handler(dstv_conv_handler)
+    application.add_handler(gotv_conv_handler)
+    application.add_handler(startimes_conv_handler)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help))
     application.add_handler(CommandHandler("continue", continue_))
