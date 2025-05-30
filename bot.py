@@ -333,6 +333,7 @@ async def pay_bills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("Cable TV", callback_data="cable_tv")],
         [InlineKeyboardButton("Education", callback_data="education")],
         [InlineKeyboardButton("Betting", callback_data="betting")],
+        [InlineKeyboardButton("Back", callback_data="full_services"),]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
@@ -352,6 +353,7 @@ async def start_buy_electricity(update: Update, context: ContextTypes.DEFAULT_TY
         [InlineKeyboardButton("JOS Electricity Distribution", callback_data="jos_electricity")],
         [InlineKeyboardButton("Kano Electricity Distribution", callback_data="kano_electricity")],
         [InlineKeyboardButton("Benin Electricity Distribution", callback_data="benin_electricity")],
+        [InlineKeyboardButton("Back", callback_data="pay_bills")],
         ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
@@ -467,6 +469,7 @@ async def start_buy_cable_tv(update: Update, context: ContextTypes.DEFAULT_TYPE)
         [InlineKeyboardButton("DSTV", callback_data="dstv")],
         [InlineKeyboardButton("GOTV", callback_data="gotv")],
         [InlineKeyboardButton("Startimes", callback_data="startimes")],
+        [InlineKeyboardButton("Back", callback_data="pay_bills")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
@@ -478,6 +481,7 @@ async def start_education(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.callback_query.answer()
     keyboard = [
         [InlineKeyboardButton("WAEC", callback_data="Waec")],
+        [InlineKeyboardButton("Back", callback_data="pay_bills")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
@@ -566,6 +570,7 @@ async def start_betting(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         [InlineKeyboardButton("Bet9ja", callback_data="bet9ja")],
         [InlineKeyboardButton("Betking", callback_data="betking")],
         [InlineKeyboardButton("Betway", callback_data="betway")],
+        [InlineKeyboardButton("Back", callback_data="pay_bills")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.callback_query.message.reply_text(
@@ -732,7 +737,7 @@ async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END
     
     context.user_data['phone'] = update.message.text
-    
+
     await update.message.reply_text(
         "🏠 Enter your *Residential Address*:",
         parse_mode='Markdown'
