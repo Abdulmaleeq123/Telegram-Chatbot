@@ -544,10 +544,10 @@ async def receive_smartcard_number(update: Update, context: ContextTypes.DEFAULT
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"✅ Cable TV Top Up Purchase\n\n"
-        f"Biller: {context.user_data['dstv_biller']}\n"
-        f"Package: {context.user_data['dstv_package']}\n"
-        f"Amount: {context.user_data['dstv_amount']}\n"
-        f"Phone: {snumber}\n\n"
+        f"• Biller: {context.user_data['dstv_biller']}\n"
+        f"• Package: {context.user_data['dstv_package']}\n"
+        f"• Amount: {context.user_data['dstv_amount']}\n"
+        f"• Smartcard Number: {snumber}\n\n"
         "Thank You for using KadickMoni",
         reply_markup=reply_markup
     )
@@ -619,10 +619,10 @@ async def receive_gotv_smartcard_number(update: Update, context: ContextTypes.DE
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"✅ Cable TV Top Up Purchase\n\n"
-        f"Biller: {context.user_data['gotv_biller']}\n"
-        f"Package: {context.user_data['gotv_package']}\n"
-        f"Amount: {context.user_data['gotv_amount']}\n"
-        f"Phone: {snumber}\n\n"
+        f"• Biller: {context.user_data['gotv_biller']}\n"
+        f"• Package: {context.user_data['gotv_package']}\n"
+        f"• Amount: {context.user_data['gotv_amount']}\n"
+        f"• Smartcard Number: {snumber}\n\n"
         "Thank You for using KadickMoni",
         reply_markup=reply_markup
     )
@@ -696,10 +696,10 @@ async def receive_start_smartcard_number(update: Update, context: ContextTypes.D
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
         f"✅ Cable TV Top Up Purchase\n\n"
-        f"Biller: {context.user_data['start_biller']}\n"
-        f"Package: {context.user_data['start_package']}\n"
-        f"Amount: {context.user_data['start_amount']}\n"
-        f"Phone: {snumber}\n\n"
+        f"• Biller: {context.user_data['start_biller']}\n"
+        f"• Package: {context.user_data['start_package']}\n"
+        f"• Amount: {context.user_data['start_amount']}\n"
+        f"• Smartcard Number: {snumber}\n\n"
         "Thank You for using KadickMoni",
         reply_markup=reply_markup
     )
