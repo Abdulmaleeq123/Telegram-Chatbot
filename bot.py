@@ -14,10 +14,11 @@ def init_db():
     c = conn.cursor()
     c.execute('''
     CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL,
         first_name TEXT,
         last_name TEXT,
-        phone TEXT,
+        phone TEXT UNIQUE,
         address TEXT,
         state TEXT,
         lga TEXT,
@@ -30,8 +31,7 @@ def init_db():
         account_number TEXT,   
         gender TEXT,           
         dob TEXT,
-        transaction_pin TEXT
-                             
+        transaction_pin TEXT                          
     )
     ''')
     conn.commit()
@@ -39,7 +39,7 @@ def init_db():
     
 init_db()
 
-TOKEN = "7077237001:AAGr3WoBn4D3pN9dvohsYII5v-ym5h__ja8"  # Replace with your bot token
+TOKEN = "7077237001:AAGr3WoBn4D3pN9dvohsYII5v-ym5h__ja8"  
 
 # Define Conversation states
 FIRST_NAME, LAST_NAME, PHONE, ADDRESS, STATE, LGA, REFERRAL_CODE, OTP_VERIFICATION, PASSWORD,\
@@ -73,7 +73,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "• Access support\n\n"
         "To get started, please choose an option below:\n\n"
     )
-    await update.message.reply_text(welcome_message, parse_mode='Markdown', reply_markup=reply_markup)
+    await update.message.reply_text(
+        welcome_message, 
+        parse_mode='Markdown', 
+        reply_markup=reply_markup
+        )
     
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
@@ -112,7 +116,7 @@ async def receive_login_phone(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('SELECT user_id, password, first_name, last_name FROM users WHERE phone = ?', (clean_phone,))
+    c.execute('SELECT id, password, first_name, last_name FROM users WHERE phone = ?', (clean_phone,))
     user_data = c.fetchone()
     conn.close()
 
@@ -135,27 +139,32 @@ async def receive_login_phone(update: Update, context: ContextTypes.DEFAULT_TYPE
     return PASSWORD_LOGIN
 
 async def receive_login_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = context.user_data['login_user_id']
     stored_password = context.user_data['stored_password']
     attempted_password = update.message.text.strip()
 
-    context.user_data.clear()
-
     if attempted_password == stored_password:
+        account_id = context.user_data['login_user_id']
+        context.user_data['current_account_id'] = account_id
+
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         c.execute('''SELECT bvn, bank_name, account_number 
-                   FROM users WHERE user_id = ?''', (user_id,))
-        user_data = c.fetchone()
-        is_full_registration = all(user_data) if user_data else False
+                   FROM users WHERE id = ?''', (account_id,))
+        reg_data = c.fetchone()
+        is_full_registration = all(reg_data) and all(field is not None for field in reg_data)
         conn.close()
 
         # Get user name
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        c.execute('SELECT first_name, last_name FROM users WHERE user_id = ?', (user_id,))
-        first_name, last_name = c.fetchone()
+        c.execute('SELECT first_name, last_name FROM users WHERE id = ?', (account_id,))
+        name_result = c.fetchone()
         conn.close()
+
+        if name_result:
+            first_name, last_name = name_result
+        else:
+            first_name, last_name = "", ""
 
         if is_full_registration:
             keyboard = [
@@ -215,14 +224,14 @@ async def services(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    account_id = context.user_data.get('current_account_id')
     query = update.callback_query
     await query.answer()
-    
-    user_id = update.effective_user.id
+
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''SELECT first_name, last_name, phone, email, address 
-               FROM users WHERE user_id = ?''', (user_id,))
+               FROM users WHERE id = ?''', (account_id,))
     user_data = c.fetchone()
     conn.close()
 
@@ -253,12 +262,9 @@ async def show_my_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
-    
-    
+    await query.answer()    
     context.user_data.clear()
-    
-    
+        
     welcome_message = (
         "👋 Welcome to *Kadick Integrated Limited*!\n\n"
         "This is the official bot for *KadickMoni* your trusted platform for *airtime and data vending*, "
@@ -284,15 +290,14 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     return ConversationHandler.END
 
-
 async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
-    user_id = update.effective_user.id
+    account_id = context.user_data.get('current_account_id')
     
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
     c.execute('''SELECT bvn, bank_name, account_number FROM users 
-               WHERE user_id = ? ''', (user_id,))
+               WHERE id = ? ''', (account_id,))
     user_data = c.fetchone()
     conn.close()
 
@@ -304,7 +309,7 @@ async def other_services(update: Update, context:ContextTypes.DEFAULT_TYPE) -> N
     bvn, bank_name, account_number = user_data
     has_completed_second_phase = all([bvn, bank_name, account_number])
 
-    has_completed_second_phase = check_registration_completion(user_id)
+    has_completed_second_phase = check_registration_completion(account_id)
 
     if has_completed_second_phase:
         keyboard = [
@@ -636,7 +641,7 @@ async def select_startimes_package(update: Update, context: ContextTypes.DEFAULT
     context.user_data['start_biller'] = selected_package
     await query.edit_message_text(
         text=f"Selected Package: {selected_package}"
-    )
+    ) 
     await query.message.reply_text(
         "Select a package\n"
         "1. Basic Dish (Monthly) - #4700\n"
@@ -872,10 +877,16 @@ async def back_to_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     query = update.callback_query
     await query.answer()
 
-    user_id = update.effective_user.id
+    account_id = context.user_data.get('current_account_id')
+    if not account_id:
+        await query.message.reply_text(
+            "❌ No active session. Please /login again."
+        )
+        return
+    
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('SELECT first_name, last_name FROM users WHERE user_id = ?', (user_id,))
+    c.execute('SELECT first_name, last_name FROM users WHERE id = ?', (account_id,))
     user_data = c.fetchone()
     conn.close()
 
@@ -885,10 +896,9 @@ async def back_to_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
     
-    first_name = user_data[0]
-    last_name = user_data[1]
+    first_name, last_name = user_data
 
-    completed = check_registration_completion(user_id)
+    completed = check_registration_completion(account_id)
     back_target = "full_services" if completed else "services"
 
     keyboard = [
@@ -941,31 +951,28 @@ async def receive_last_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return PHONE
 
 async def receive_phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if not update.message.text.isdigit():
+    raw_phone = update.message.text.strip()
+    clean_phone = re.sub(r'\D', '', raw_phone)
+    if not clean_phone.isdigit() or len(clean_phone) != 11:                              
         await update.message.reply_text(
-            "⚠️ Please enter a valid phone number (digits only):")
+            "⚠️ Please enter a valid phone number")
         return PHONE
-    if len(update.message.text) != 11:
-        await update.message.reply_text(
-            "⚠️ Phone number must be 11 digits. Please try again:",
-            parse_mode='Markdown'
-        )
-        return PHONE
-    
+
+    user_id = update.effective_user.id
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('SELECT user_id FROM users WHERE phone = ?', (update.message.text,))
+    c.execute('SELECT user_id FROM users WHERE user_id = ? AND phone = ?', (user_id, clean_phone))
     existing_user = c.fetchone()
     conn.close()
 
     if existing_user:
         await update.message.reply_text(
             "❌ This phone number is already registered.\n"
-            "Please login with /login or use a different phone number."
+            "Please login with /login or use a different phone number to /register."
         )
         return ConversationHandler.END
     
-    context.user_data['phone'] = update.message.text
+    context.user_data['phone'] = clean_phone
 
     await update.message.reply_text(
         "🏠 Enter your *Residential Address*:",
@@ -1063,10 +1070,10 @@ async def verify_otp(update: Update, context:ContextTypes.DEFAULT_TYPE) -> int:
 
     if user_input == stored_otp:
         await update.message.reply_text(
-            "✅ OTP verified!\n"
+            "✅ OTP verified!\n\n"
             "Create your password.\n"
-            "Must be at least 8 characters and " \
-            "contain at least one special character and one number."
+            "Must be at least 8 characters.\n"
+            "Must contain at least one special character and one number."
         )
         return PASSWORD
     else:
@@ -1091,8 +1098,7 @@ async def confirm_password(update: Update, context:ContextTypes.DEFAULT_TYPE) ->
         original_password = context.user_data.get('password', '')
 
         if confirmed_password != original_password:
-            await update.message.reply_text("❌ Passwords do not match. \
-        Please enter your password again.")
+            await update.message.reply_text("❌ Passwords do not match. Please enter your password again.")
             return PASSWORD
 
         # Save to database
@@ -1100,17 +1106,7 @@ async def confirm_password(update: Update, context:ContextTypes.DEFAULT_TYPE) ->
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
         registration_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        try:
-            c.execute('SELECT user_id FROM users WHERE user_id = ?', (user_id,))
-            if c.fetchone():
-                await update.message.reply_text(
-                    "⚠️ User already exists. Please login with /login.",
-                    parse_mode='Markdown'
-                )
-                conn.close()
-                context.user_data.clear()
-                return ConversationHandler.END
-            
+        try:            
             c.execute('''INSERT INTO users
                 (user_id, first_name, last_name, phone, address, 
                 state, lga, password, referral_code, email,
@@ -1150,6 +1146,13 @@ async def confirm_password(update: Update, context:ContextTypes.DEFAULT_TYPE) ->
             await update.message.reply_text(confirmation, parse_mode='Markdown')
             context.user_data.clear()
             return ConversationHandler.END
+        
+        except sqlite3.IntegrityError:
+            await update.message.reply_text(
+                "❌ This phone number is already registered.\n"
+            "Please use a different phone number."
+        )
+            return ConversationHandler.END
         except Exception as e:
             print(f"Database error: {str(e)}")
             await update.message.reply_text(
@@ -1176,20 +1179,33 @@ async def continue_(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     return CONTINUE
 
 async def registration(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    user_id = update.effective_user.id
+    if 'current_account_id' not in context.user_data:
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.message.reply_text(
+                "❌ Session expired. Please login again."
+            )
+        else:
+            await update.message.reply_text(
+                "❌ Session expired. Please login again."
+            )
+        return ConversationHandler.END
+    
+    account_id = context.user_data['current_account_id']
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('''SELECT bvn, bank_name, account_number FROM users 
-               WHERE user_id = ? AND bvn IS NOT NULL 
+    c.execute('''SELECT bvn, bank_name, account_number FROM users
+               WHERE id = ? AND bvn IS NOT NULL 
                AND bank_name IS NOT NULL 
-               AND account_number IS NOT NULL''', (user_id,))
+               AND account_number IS NOT NULL''', (account_id,))
     existing_details = c.fetchone()
     conn.close()
 
-    if update.callback_query:
-        await update.callback_query.answer()
-        await update.callback_query.message.reply_text(
+    if existing_details:
+        if update.callback_query:
+            await update.callback_query.answer()
+            await update.callback_query.message.reply_text(
                 "Please enter your *Email Address*",
                 parse_mode='Markdown'
             )
@@ -1211,13 +1227,17 @@ async def receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return EMAIL
     context.user_data['email'] = email
 
+    account_id = context.user_data.get('current_account_id')
+    if not account_id:
+        await update.message.reply_text("❌ Session expired. Please login again.")
+        return ConversationHandler.END
+
     # Update database
-    user_id = update.effective_user.id
     try:
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
-        c.execute('''UPDATE users SET email = ? WHERE user_id = ?''',
-                 (email, user_id))
+        c.execute('''UPDATE users SET email = ? WHERE id = ?''',
+                 (email, account_id))
         if c.rowcount == 0:
             await update.message.reply_text(
                 "⚠️ No user found. Please complete the first phase of registration with /register.",
@@ -1306,8 +1326,11 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         await update.message.reply_text("⚠️ Invalid date format. Use DD-MM-YYYY:"
         )
         return DOB
+    account_id = context.user_data.get('current_account_id')
+    if not account_id:
+        await update.message.reply_text("❌ Session expired. Please login again.")
+        return ConversationHandler.END
     
-    user_id = update.effective_user.id
     try:
         conn = sqlite3.connect('users.db')
         c = conn.cursor()
@@ -1317,13 +1340,13 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                   account_number = ?,
                   gender = ?,
                   dob = ?
-                  WHERE user_id = ?''',
+                  WHERE id = ?''',
                   (context.user_data['bvn'],
                    context.user_data['bank_name'],
                    context.user_data['account_number'],
                    context.user_data['gender'],
                    context.user_data['dob'],
-                   user_id))
+                   account_id))
         conn.commit()
         conn.close()
 
@@ -1343,7 +1366,10 @@ async def receive_dob(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             "⚠️ Error saving details. Please start over."
         )
 
-    context.user_data.clear()
+    keys_to_remove = ['bvn', 'bank_name', 'account_number', 'gender', 'dob']
+    for key in keys_to_remove:
+            if key in context.user_data:
+                del context.user_data[key]
     return ConversationHandler.END
 
 async def start_pin_setup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1375,11 +1401,11 @@ async def confirm_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         )
         return SETUP_PIN
     
-    user_id = update.effective_user.id
+    account_id = context.user_data.get('current_account_id')
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('UPDATE users SET transaction_pin = ? WHERE user_id = ?',
-                  (new_pin, user_id))
+    c.execute('UPDATE users SET transaction_pin = ? WHERE id = ?',
+                  (new_pin, account_id))
     conn.commit()
     conn.close()
 
@@ -1432,12 +1458,8 @@ async def confirm_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             reply_markup=reply_markup,
             parse_mode='Markdown'
         )
-        context.user_data.pop('pending_data', None)
-        context.user_data.pop('data_phone', None)
-        context.user_data.pop('data_network', None)
-        context.user_data.pop('data_plan', None)
-        context.user_data.pop('data_amount', None)
-        context.user_data.clear()
+        for key in ['pending_airtime', 'airtime_phone', 'airtime_network', 'airtime_amount']:
+            context.user_data.pop(key, None)
         return ConversationHandler.END
     
 async def start_buy_airtime(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1495,10 +1517,10 @@ async def receive_airtime_amount(update: Update, context: ContextTypes.DEFAULT_T
         return BUY_AIRTIME_AMOUNT
     context.user_data["airtime_amount"] = amount
 
-    user_id = update.effective_user.id
+    account_id = context.user_data.get('current_account_id')
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
-    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    c.execute('SELECT transaction_pin FROM users WHERE id = ?', (account_id,))
     pin = c.fetchone()[0]
     conn.close()
 
@@ -1517,11 +1539,17 @@ async def receive_airtime_amount(update: Update, context: ContextTypes.DEFAULT_T
 
 async def verify_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     entered_pin = update.message.text.strip()
-    user_id = update.effective_user.id
+    account_id = context.user_data.get('current_account_id')
+
+    if not account_id:
+        await update.message.reply_text(
+            "❌ Session expired. Please /login again."
+        )
+        return ConversationHandler.END
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    c.execute('SELECT transaction_pin FROM users WHERE id = ?', (account_id,))
     stored_pin = c.fetchone()[0]
     conn.close()
 
@@ -1535,7 +1563,7 @@ async def verify_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     selected_network = context.user_data.get('airtime_network')
     amount = context.user_data.get('airtime_amount')
 
-    completed = check_registration_completion(user_id)
+    completed = check_registration_completion(account_id)
     back_target = "full_services" if completed else "services"
 
     keyboard = [
@@ -1552,9 +1580,8 @@ async def verify_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         parse_mode='Markdown'
     )
 
-    context.user_data.pop('airtime_phone', None)
-    context.user_data.pop('airtime_network', None)
-    context.user_data.pop('airtime_amount', None)
+    for key in ['pending_airtime', 'airtime_phone', 'airtime_network', 'airtime_amount']:
+        context.user_data.pop(key, None)
     return ConversationHandler.END
 
 async def start_buy_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1630,10 +1657,10 @@ async def receive_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     context.user_data['data_plan'] = plan_name
     context.user_data['data_amount'] = amount
 
-    user_id = update.effective_user.id
+    account_id = context.user_data.get('current_account_id')
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    c.execute('SELECT transaction_pin FROM users WHERE id = ?', (account_id,))
     stored_pin = c.fetchone()[0]
     conn.close()
 
@@ -1653,11 +1680,17 @@ async def receive_data_plan(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def verify_data_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     entered_pin = update.message.text.strip()
-    user_id = update.effective_user.id
+    
+    account_id = context.user_data.get('current_account_id')
+    if not account_id:
+        await update.message.reply_text(
+            "❌ Session expired. Please /login again."
+        )
+        return ConversationHandler.END
 
     conn = sqlite3.connect('users.db')
     c = conn.cursor()
-    c.execute('SELECT transaction_pin FROM users WHERE user_id = ?', (user_id,))
+    c.execute('SELECT transaction_pin FROM users WHERE id = ?', (account_id,))
     result = c.fetchone()
     conn.close()
 
@@ -1674,7 +1707,7 @@ async def verify_data_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     plan = context.user_data.get('data_plan')
     amount = context.user_data.get('data_amount')
 
-    completed = check_registration_completion(user_id)
+    completed = check_registration_completion(account_id)
     back_target = "full_services" if completed else "services"
 
     keyboard = [
@@ -1700,11 +1733,11 @@ async def verify_data_pin(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     return ConversationHandler.END
 
-def check_registration_completion(user_id):
-    conn = sqlite3.connect('users.db')
+def check_registration_completion(account_id):
+    conn = sqlite3.connect('users.db')  
     c = conn.cursor()
     c.execute('''SELECT bvn, bank_name, account_number FROM users 
-               WHERE user_id = ?''', (user_id,))
+               WHERE id = ?''', (account_id,))
     user_data = c.fetchone()
     conn.close()
     if user_data:
@@ -1868,8 +1901,6 @@ def main() -> None:
     )
 
     # Register handlers
-    # application.add_handler(CallbackQueryHandler(register, pattern="^register$"))
-    # application.add_handler(CallbackQueryHandler(login, pattern="^login$"))
     application.add_handler(CallbackQueryHandler(help, pattern="^help$"))
     application.add_handler(CallbackQueryHandler(services, pattern="^services$"))
     application.add_handler(CallbackQueryHandler(other_services, pattern="^other_services$"))
